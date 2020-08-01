@@ -11,7 +11,7 @@ PRIMARY KEY (id)
 
 CREATE TABLE role (
 title VARCHAR(30),
-salary DECIMAL,
+salary DECIMAL(4, 3),
 department_id INT,
 id INT AUTO_INCREMENT,
 PRIMARY KEY (id),
