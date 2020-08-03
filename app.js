@@ -6,14 +6,15 @@ const render = require("./lib/render/renderer");
 const tables = {
     "role": [],
     "employee": [],
-    "department": []
+    "department": [],
+    "manager": []
 }
 
 const mainMenuChoices = [
     "View all employees",
     "View all employees by department",
-    // "View all employees by manager",
-    // "Add a new employee",
+    "View all employees by manager",
+    "Add a new employee",
     "Exit"
 ]
 
@@ -28,8 +29,25 @@ function initializeData() {
     queries.sendQuery(queries.selectAll, "employee", handleInitialize);
     queries.sendQuery(queries.selectAll, "role", handleInitialize);
     queries.sendQuery(queries.selectAll, "department", handleInitialize);
+    queries.sendQuery(queries.selectManagers, "", populateManagers);
 }
 
+function changeEmployeeIdToName(id) {
+    if (tables["employee"].length > 1) {
+        if (tables["employee"][id])
+            return tables["employee"][id].first_name + " " + tables["employee"][id].last_name;
+    }
+}
+
+function populateManagers(rows) {
+    tables["manager"] = [];
+    if (tables["employee"].length > 1) {
+        rows.forEach(({ manager_id }) => {
+            if (!manager_id) tables["manager"][0] = "None";
+            else tables["manager"][manager_id] = changeEmployeeIdToName(manager_id);
+        });
+    }
+}
 function handleInitialize(rows, table) {
     tables[table] = [];
     for (let i = 0; i < rows.length; i++) {
@@ -37,7 +55,7 @@ function handleInitialize(rows, table) {
     }
 }
 
-function askAboutDepartment() {
+function askWhichDepartment() {
     inquirer.prompt({
         type: "rawlist",
         message: "Which department do you want to see?",
@@ -48,7 +66,21 @@ function askAboutDepartment() {
         },
         name: "department"
     }).then(({ department }) =>
-        queries.sendQuery(queries.mainQuery + "  AND role.department_id = ", department, renderAll));
+        queries.sendQuery(queries.departmentJoinQuery + "  AND role.department_id = ", department, renderEmployees));
+}
+
+function askWhichManager() {
+    inquirer.prompt({
+        type: "rawlist",
+        message: "Which manager do you want to see?",
+        choices: tables["manager"].map(manager => manager).filter(name => name),
+        filter: function (input) {
+            return tables["manager"].indexOf(input);
+        },
+        name: "manager"
+    }).then(({ manager }) => {
+        queries.sendQuery(`${queries.departmentJoinQuery} AND employee.manager_id ${manager > 0 ? "= " + manager: "IS NULL"}`, "", renderEmployees);
+    });
 }
 
 function mainMenu() {
@@ -58,26 +90,26 @@ function mainMenu() {
         choices: mainMenuChoices,
         name: "task"
     }).then(({ task }) => {
-        switch (mainMenuChoices.indexOf(task)) {
-            case 0:
-                queries.sendQuery(queries.mainQuery, "", renderAll);
+        switch (task) {
+            case "View all employees":
+                queries.sendQuery(queries.departmentJoinQuery, "", renderEmployees);
                 break;
-            case 1:
-                askAboutDepartment();
+            case "View all employees by department":
+                askWhichDepartment();
                 break;
-            // case 3:
-            //     getEmployeeInfo();
-            //     break;
-            // case "V":
-            //     viewMenu();
-            //     break;
+            case "View all employees by manager":
+                askWhichManager();
+                break;
+            case "Add a new employee":
+                getEmployeeInfo();
+                break;
             default:
                 connection.end();
         }
     });
 }
 
-function renderAll(employees) {
+function renderEmployees(employees) {
     render.allEmployeeResults(employees, tables);
     mainMenu();
 }
