@@ -2,86 +2,55 @@ const inquirer = require("inquirer");
 const connection = require("./lib/sql/connection");
 const queries = require("./lib/sql/queries");
 const render = require("./lib/render/renderer");
+const { getAllRoles, getAllDepartments, getRolesInDepartment } = require("./lib/sql/queries");
+const table = require("console.table").getTable;
 
-const tables = {
-    "role": [],
-    "employee": [],
-    "department": [],
-    "manager": []
-}
+// cache data for making lists
+// const tables = {
+//     "role": [],
+//     "employee": [],
+//     "department": [],
+//     "manager": []
+// }
 
 const mainMenuChoices = [
     "View all employees",
-    "View all employees by department",
-    "View all employees by manager",
-    "Add a new employee",
+    "View employees by department",
+    // "View employees by manager",
+    "View employees by role",
+    "Add an employee",
+    // "Remove an employee",
+    // "Remove a department",
+    // "Remove a role",
+    // "Set a manager for an employee",
     "Exit"
 ]
 
+
+// connect to the server to begin the program
 connection.connect(function (error) {
     if (error) throw error;
     console.log("Connected : ", connection.threadId);
-    initializeData();
     mainMenu();
 });
 
-function initializeData() {
-    queries.sendQuery(queries.selectAll, "employee", handleInitialize);
-    queries.sendQuery(queries.selectAll, "role", handleInitialize);
-    queries.sendQuery(queries.selectAll, "department", handleInitialize);
-    queries.sendQuery(queries.selectManagers, "", populateManagers);
-}
-
-function changeEmployeeIdToName(id) {
-    if (tables["employee"].length > 1) {
-        if (tables["employee"][id])
-            return tables["employee"][id].first_name + " " + tables["employee"][id].last_name;
-    }
-}
-
-function populateManagers(rows) {
-    tables["manager"] = [];
-    if (tables["employee"].length > 1) {
-        rows.forEach(({ manager_id }) => {
-            if (!manager_id) tables["manager"][0] = "None";
-            else tables["manager"][manager_id] = changeEmployeeIdToName(manager_id);
-        });
-    }
-}
-function handleInitialize(rows, table) {
-    tables[table] = [];
-    for (let i = 0; i < rows.length; i++) {
-        tables[table][rows[i].id] = rows[i];
-    }
-}
-
-function askWhichDepartment() {
-    inquirer.prompt({
-        type: "rawlist",
-        message: "Which department do you want to see?",
-        choices: tables["department"].map(department => department.name).filter(name => name),
-        filter: function (input) {
-            let temp = tables["department"].filter(department => department.name == input);
-            return temp[0].id;
-        },
-        name: "department"
-    }).then(({ department }) =>
-        queries.sendQuery(queries.departmentJoinQuery + "  AND role.department_id = ", department, renderEmployees));
-}
-
-function askWhichManager() {
-    inquirer.prompt({
-        type: "rawlist",
-        message: "Which manager do you want to see?",
-        choices: tables["manager"].map(manager => manager).filter(name => name),
-        filter: function (input) {
-            return tables["manager"].indexOf(input);
-        },
-        name: "manager"
-    }).then(({ manager }) => {
-        queries.sendQuery(`${queries.departmentJoinQuery} AND employee.manager_id ${manager > 0 ? "= " + manager: "IS NULL"}`, "", renderEmployees);
-    });
-}
+// function askWhichManager() {
+//     inquirer.prompt({
+//         type: "list",
+//         message: "Which manager do you want to see?",
+//         choices: tables["manager"].map(manager => manager).filter(name => name),
+//         filter: function (input) {
+//             return tables["manager"].indexOf(input);
+//         },
+//         name: "manager_id"
+//     }).then(({ manager_id }) => {
+//         let output = "IS NULL";
+//         if (manager_id > 0) {
+//             output = `= ${manager_id}`
+//         }
+//         queries.sendQuery(`${queries.departmentJoinQuery} AND employee.manager_id ${output}`, "", renderEmployees);
+//     });
+// }
 
 function mainMenu() {
     inquirer.prompt({
@@ -92,58 +61,120 @@ function mainMenu() {
     }).then(({ task }) => {
         switch (task) {
             case "View all employees":
-                queries.sendQuery(queries.departmentJoinQuery, "", renderEmployees);
+                queries.getReadableEmployeeTable().then(showResultTable);
                 break;
-            case "View all employees by department":
-                askWhichDepartment();
+            case "View employees by department":
+                queries.getAllDepartments()
+                    .then(askWhichDepartment)
+                    .then(queries.getReadableDepartmentTable)
+                    .then(showResultTable);
                 break;
-            case "View all employees by manager":
-                askWhichManager();
+            case "View employees by role":
+                queries.getAllRoles()
+                    .then(askWhichRole)
+                    .then(queries.getReadableRoleTable)
+                    .then(showResultTable);
                 break;
-            case "Add a new employee":
-                getEmployeeInfo();
+            // case "View employees by manager":
+            //     askWhichManager();
+            //     break;
+            case "Add an employee":
+                enterEmployeeName().then(enterEmployeeRole)
                 break;
+            // case "Set a manager for an employee":
+            //     changeManager();
+            //     break;
             default:
                 connection.end();
         }
     });
 }
 
-function renderEmployees(employees) {
-    render.allEmployeeResults(employees, tables);
+function showResultTable(resultTable) {
+    console.table(table(resultTable));
     mainMenu();
 }
 
-function getEmployeeInfo() {
-    inquirer.prompt([{
-        message: "First Name: ",
-        name: "first_name"
-    },
-    {
-        message: "Last Name: ",
-        name: "last_name"
-    },
-    {
-        type: "rawlist",
-        message: "Role: ",
-        choices: tables["role"].map(role => role.title),
-        name: "role_id",
-        filter: function (input) {
-            let temp = tables["role"].filter(role => role.title === input);
-            return temp[0].id;
+function askWhichDepartment(departments) {
+    // console.log(departments);
+    return inquirer.prompt({
+        type: "list",
+        message: "Which department?",
+        choices: departments.map(department => department.name),
+        filter: function(input) {
+            for (let i = 0; i < departments.length; i++) {
+                if (departments[i].name == input) {
+                    return departments[i];
+                }
+            }
+        },
+        name: "department"
+    });
+}
+
+function askWhichRole(roles) {
+    // console.log(roles);
+    return inquirer.prompt({
+        type: "list",
+        message: "Which role?",
+        choices: roles.map(role => role.title),
+        filter: function(input) {
+            for (let i = 0; i < roles.length; i++) {
+                if (roles[i].title == input) {
+                    
+                    return roles[i];
+                }
+            }
+        },
+        name: "role"
+    });
+}
+
+function enterEmployeeName() {
+    return inquirer.prompt([
+        {
+            message: "First Name: ",
+            name: "first_name"
+        },
+        {
+            message: "Last Name: ",
+            name: "last_name"
         }
-    }]).then(addEmployee);
+    ]);
 }
 
-function addEmployee(employee) {
-    connection.query("INSERT INTO employee SET ?", employee, function (error) {
-        if (error) throw error;
-        queries.sendQuery(queries.selectAll, "employee", initializeData);
-        mainMenu();
-        // connection.end();
-
-    })
+function enterEmployeeRole(employee) {
+    getAllDepartments()
+    .then(askWhichDepartment)
+    .then(getRolesInDepartment)
+    .then(askWhichRole)
+    .then(({role}) => {
+        employee.role_id = role.id;
+        queries.insertNewEmployee(employee);
+    });
 }
+
+// function postEmployee(employee) {
+//     connection.query("INSERT INTO employee SET ?", employee, function (error) {
+//         if (error) throw error;
+//         queries.sendQuery(queries.selectAll, "employee", initializeData);
+//         mainMenu();
+//     });
+// }
+
+// function employeeArray() {
+//     return tables["employee"].map(employee => (employee ? `${employee.first_name} ${employee.last_name}` : null));
+// }
+
+// function changeManager() {
+//     inquirer.prompt({
+//         type: "list",
+//         message: "Which employee do you want to set a manager for?",
+//         choices: employeeArray(),
+//         name: "employeeName"
+//     })
+//     // connection.end();
+// }
 // minimum req - CLI app that allows
 // add departments, roles, employees
 // view departments, roles, employees
