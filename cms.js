@@ -23,20 +23,16 @@ function createEmployee() {
             choices: function () {
                 return new Promise(resolve => {
                     orm.selectAsName("title", "role")
-                        .then(roles => {
-                            return resolve(roles);
-                            // .map(role => {
-                            //     return {  };
-                            // }));
-                        });
+                        .then(resolve);
                 });
             },
             filter: function (answer) {
                 return new Promise(resolve => {
                     orm.selectWhere("id", "role", "role.title", answer)
-                        .then(([{ id }]) => resolve);
+                        .then(([{ id }]) => resolve(id));
                 });
-            }
+            },
+            name: "role_id"
         }
     ]);
 }
@@ -112,9 +108,10 @@ function showNextMenu({ menu }) {
             orm.viewRoles().then(showResults);
             break;
         case "Add employee":
-            orm.selectAsName("title", "role")
-                // createEmployee()
-                .then(console.log);
+            createEmployee()
+                .then(employee => 
+                    orm.create("employee", employee)
+                    .then(mainMenu));
             break;
         case "Add role":
             createRole()
