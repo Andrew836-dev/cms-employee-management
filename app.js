@@ -1,25 +1,65 @@
 const inquirer = require("inquirer");
-const connection = require("./lib/sql/connection");
-const queries = require("./lib/sql/queries");
-const render = require("./lib/render/renderer");
-const { getAllRoles, getAllDepartments, getRolesInDepartment } = require("./lib/sql/queries");
+const connection = require("./lib/config/connection");
+const orm = require("./lib/config/orm");
+// const { getAllRoles, getAllDepartments, getRolesInDepartment } = require("./lib/sql/queries");
 const table = require("console.table").getTable;
 
-// cache data for making lists
-// const tables = {
-//     "role": [],
-//     "employee": [],
-//     "department": [],
-//     "manager": []
-// }
+const askWhichDepartment = {
+    type: "list",
+    message: "Which department?",
+    choices: function () {
+        return orm.selectWhere("DISTINCT name", "department");
+    },
+    filter: function (answer) {
+        return new Promise(resolve => {
+            orm.selectWhere("id, name", "department", `WHERE name = "${answer}"`)
+            .then(([department]) => {
+                resolve(department);
+            });
+        });
+    },
+    name: "department"
+}
+
+const askWhichRole = {
+    type: "list",
+    message: "Which role?",
+    choices: function () {
+        return orm.selectWhere("title as name", "role");
+    },
+    filter: function (answer) {
+        return new Promise(resolve => {
+            orm.selectWhere("id, title", "role", `WHERE title = "${answer}"`)
+                .then(([role]) => resolve(role));
+        });
+    },
+    name: "role"
+}
+
+const askWhichEmployee = {
+    type: "list",
+    message: "Which employee?",
+    choices: function () {
+        return new Promise(resolve => {
+            orm.selectWhere("employee.id, employee.first_name, employee.last_name, role.title", "role, employee", "WHERE role.id = employee.role_id ORDER BY employee.id")
+                .then(result => resolve(result.map(({ id, first_name, last_name, title }) => `${id} - ${first_name} ${last_name} - ${title}`)));
+        });
+    },
+    filter: function (answer) {
+        return answer.split(" - ")[0];
+    },
+    name: "id"
+}
 
 const mainMenuChoices = [
     "View all employees",
     "View employees by department",
     // "View employees by manager",
     "View employees by role",
-    "Add an employee",
-    // "Remove an employee",
+    "Add employee",
+    "Add department",
+    "Add role",
+    "Remove an employee",
     // "Remove a department",
     // "Remove a role",
     // "Set a manager for an employee",
@@ -27,12 +67,151 @@ const mainMenuChoices = [
 ]
 
 
-// connect to the server to begin the program
-connection.connect(function (error) {
-    if (error) throw error;
-    console.log("Connected : ", connection.threadId);
-    mainMenu();
-});
+// // connect to the server to begin the program
+// connection.connect(function (error) {
+//     if (error) throw error;
+//     console.log("Connected : ", connection.threadId);
+//     return mainMenu();
+// });
+
+function mainMenu() {
+    inquirer.prompt({
+        type: "list",
+        message: "What would you like to do today?",
+        choices: mainMenuChoices,
+        name: "task"
+    }).then(({ task }) => {
+        switch (task) {
+            case "View all employees":
+                return orm.finalQuery().then(showResultTable);
+            case "View employees by department":
+                return inquirer.prompt(askWhichDepartment)
+                    .then(({ department }) => {
+                        return orm.finalQuery("role.department_id = " + department.id);
+                    })
+                    .then(showResultTable);
+            case "View employees by role":
+                return inquirer.prompt(askWhichRole)
+                    .then(({ role }) => {
+                        return orm.finalQuery("employee.role_id = " + role.id);
+                    })
+                    .then(showResultTable);
+            // case "View employees by manager":
+            //     askWhichManager();
+            //     break;
+            case "Add employee":
+                return enterEmployeeInfo()
+                    .then(employee => {
+                        return orm.create("employee", employee);
+                    }).then(mainMenu);
+            case "Add department":
+                return enterDepartmentInfo()
+                    .then(department => {
+                        return orm.create("department", department);
+                    }).then(mainMenu);
+            case "Add role":
+                return enterRoleInfo()
+                    .then(roleData => {
+                        
+                    }).then(mainMenu);
+            case "Remove an employee":
+                return inquirer.prompt(askWhichEmployee)
+                    .then(employee => {
+                        return orm.delete("employee", employee);
+                    }).then(mainMenu);
+            // case "Set a manager for an employee":
+            //     changeManager();
+            //     break;
+            default:
+                return connection.end();
+        }
+    });
+}
+
+function showResultTable(resultTable) {
+    console.table(table(resultTable));
+    return mainMenu();
+}
+
+function enterDepartmentInfo() {
+    return inquirer.prompt(
+        {
+            message: "Enter department name:",
+            name: "name"
+        }
+    );
+}
+
+function enterRoleInfo() {
+    return inquirer.prompt([
+        {
+            message: "Enter role title:",
+            name: "title"
+        },
+        {
+            message: "Enter salary for role:",
+            name: "salary"
+        },
+        askWhichDepartment
+    ])
+}
+
+function parseRoleInfo(roleData) {
+    let role = { 
+        title: roleData.title,
+        salary: roleData.salary,
+        department_id: roleData.department.id }
+    return orm.create("role", role);
+}
+function enterEmployeeInfo() {
+    return inquirer.prompt([
+        {
+            message: "First Name: ",
+            name: "first_name"
+        },
+        {
+            message: "Last Name: ",
+            name: "last_name"
+        },
+        {
+            type: "list",
+            message: "Choose a role: ",
+            choices: function () {
+                return orm.selectWhere("DISTINCT title as name", "role", "ORDER BY department_id");
+            },
+            filter: function (answer) {
+                return new Promise(resolve => {
+                    orm.selectWhere("id", "role", `WHERE title = "${answer}"`)
+                        .then(([role]) => resolve(role.id));
+                });
+            },
+            name: "role_id"
+        }
+    ]
+    );
+}
+
+// function askWhichDepartment() {
+//     return inquirer.prompt(questionArray.askWhichDepartment
+//         // {
+//         //     type: "list",
+//         //     message: "Which department?",
+//         //     name: "department",
+//         //     choices: function () {
+//         //         return queries.getAllDepartments();
+//         //     },
+//         //     filter: function (answer) {
+//         //         return new Promise(resolve => {
+//         //             queries.getDepartmentIdFor(answer).then(([department]) => {
+//         //                 console.log(department);
+//         //                 resolve(department);
+//         //             });
+//         //         });
+//         //     }
+//         // }
+//     );
+// }
+
 
 // function askWhichManager() {
 //     inquirer.prompt({
@@ -52,129 +231,6 @@ connection.connect(function (error) {
 //     });
 // }
 
-function mainMenu() {
-    inquirer.prompt({
-        type: "list",
-        message: "What would you like to do today?",
-        choices: mainMenuChoices,
-        name: "task"
-    }).then(({ task }) => {
-        switch (task) {
-            case "View all employees":
-                queries.getReadableEmployeeTable().then(showResultTable);
-                break;
-            case "View employees by department":
-                queries.getAllDepartments()
-                    .then(askWhichDepartment)
-                    .then(queries.getReadableDepartmentTable)
-                    .then(showResultTable);
-                break;
-            case "View employees by role":
-                queries.getAllRoles()
-                    .then(askWhichRole)
-                    .then(queries.getReadableRoleTable)
-                    .then(showResultTable);
-                break;
-            // case "View employees by manager":
-            //     askWhichManager();
-            //     break;
-            case "Add an employee":
-                enterEmployeeName().then(enterEmployeeRole)
-                break;
-            // case "Set a manager for an employee":
-            //     changeManager();
-            //     break;
-            default:
-                connection.end();
-        }
-    });
-}
-
-function showResultTable(resultTable) {
-    console.table(table(resultTable));
-    mainMenu();
-}
-
-function askWhichDepartment(departments) {
-    // console.log(departments);
-    return inquirer.prompt({
-        type: "list",
-        message: "Which department?",
-        choices: departments.map(department => department.name),
-        filter: function(input) {
-            for (let i = 0; i < departments.length; i++) {
-                if (departments[i].name == input) {
-                    return departments[i];
-                }
-            }
-        },
-        name: "department"
-    });
-}
-
-function askWhichRole(roles) {
-    // console.log(roles);
-    return inquirer.prompt({
-        type: "list",
-        message: "Which role?",
-        choices: roles.map(role => role.title),
-        filter: function(input) {
-            for (let i = 0; i < roles.length; i++) {
-                if (roles[i].title == input) {
-                    
-                    return roles[i];
-                }
-            }
-        },
-        name: "role"
-    });
-}
-
-function enterEmployeeName() {
-    return inquirer.prompt([
-        {
-            message: "First Name: ",
-            name: "first_name"
-        },
-        {
-            message: "Last Name: ",
-            name: "last_name"
-        }
-    ]);
-}
-
-function enterEmployeeRole(employee) {
-    getAllDepartments()
-    .then(askWhichDepartment)
-    .then(getRolesInDepartment)
-    .then(askWhichRole)
-    .then(({role}) => {
-        employee.role_id = role.id;
-        queries.insertNewEmployee(employee);
-    });
-}
-
-// function postEmployee(employee) {
-//     connection.query("INSERT INTO employee SET ?", employee, function (error) {
-//         if (error) throw error;
-//         queries.sendQuery(queries.selectAll, "employee", initializeData);
-//         mainMenu();
-//     });
-// }
-
-// function employeeArray() {
-//     return tables["employee"].map(employee => (employee ? `${employee.first_name} ${employee.last_name}` : null));
-// }
-
-// function changeManager() {
-//     inquirer.prompt({
-//         type: "list",
-//         message: "Which employee do you want to set a manager for?",
-//         choices: employeeArray(),
-//         name: "employeeName"
-//     })
-//     // connection.end();
-// }
 // minimum req - CLI app that allows
 // add departments, roles, employees
 // view departments, roles, employees
@@ -185,3 +241,5 @@ function enterEmployeeRole(employee) {
 // view by manager
 // delete departments, roles, employees
 // view total utilized budget of a department (combined salaries)
+
+mainMenu();
