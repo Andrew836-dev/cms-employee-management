@@ -114,8 +114,8 @@ function showNextMenu({ menu }) {
         case "Add employee":
             createEmployee()
                 .then(employee =>
-                    orm.create("employee", employee)
-                        .then(mainMenu));
+                    orm.create("employee", employee))
+                    .then(mainMenu);
             break;
         case "Add role":
             createRole()
