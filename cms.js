@@ -66,6 +66,7 @@ function createRole() {
         }
     ]);
 }
+
 function createDepartment() {
     return inquirer.prompt(
         {
@@ -73,6 +74,19 @@ function createDepartment() {
             name: "name"
         });
 }
+
+const mainMenuOptions = [
+    "View all employees",
+    "View all departments",
+    "View all roles",
+    "Add department",
+    "Add role",
+    "Add employee",
+    "Update employee details",
+    "Delete an employee",
+    "Delete a department",
+    "Exit"
+]
 
 function mainMenu() {
     inquirer.prompt({
@@ -85,16 +99,6 @@ function mainMenu() {
             console.log(error));
 }
 
-const mainMenuOptions = [
-    "View all employees",
-    "View all departments",
-    "View all roles",
-    "Add department",
-    "Add role",
-    "Add employee",
-    "Delete an employee",
-    "Exit"
-]
 
 function showNextMenu({ menu }) {
     switch (menu) {
@@ -109,9 +113,9 @@ function showNextMenu({ menu }) {
             break;
         case "Add employee":
             createEmployee()
-                .then(employee => 
+                .then(employee =>
                     orm.create("employee", employee)
-                    .then(mainMenu));
+                        .then(mainMenu));
             break;
         case "Add role":
             createRole()
@@ -127,6 +131,21 @@ function showNextMenu({ menu }) {
                     orm.create("department", department);
                 }).then(mainMenu);
             break;
+        case "Update employee details":
+            orm.employeeNames().then(names => {
+                let choice = names.map(({ id, name, title }) => {
+                    return `${id} - ${name} - ${title}`
+                });
+                chooseEmployee(choice).then(chosen => {
+                    createEmployee()
+                    .then(employee => {
+                        console.log("Updating", chosen, employee.first_name, employee.last_name, employee.role_id);
+                        orm.update("employee", employee, chosen)
+                        .then(mainMenu);
+                    })
+                });
+            });
+            break;
         case "Delete an employee":
             orm.employeeNames().then(names => {
                 let choice = names.map(({ id, name, title }) => {
@@ -139,10 +158,31 @@ function showNextMenu({ menu }) {
                 });
             });
             break;
+        case "Delete a department":
+            orm.selectDistinct("name", "department")
+            .then(chooseDepartment)
+            .then(department => orm.delete("department", department))
+            .catch(error => console.log(error.sqlMessage))
+            .finally(mainMenu);
+            break;
         default:
             orm.closeConnection();
             console.log("Connection closed : ", menu);
     }
+}
+function chooseDepartment(arrayIn) {
+    return inquirer.prompt({
+        type: "list",
+        message: "Choose a current department",
+        choices: arrayIn,
+        filter: function (answer) {
+            return new Promise(resolve => {
+                orm.selectWhere("id", "department", "name", answer)
+                .then(([{id}]) => resolve(id));
+            });
+        },
+        name: "id"
+    })
 }
 
 function chooseEmployee(arrayIn) {
