@@ -12,6 +12,7 @@ You can Fork and clone this repository to your local machine.
 This program requires **Node.js**, **Inquirer**, **MySQL** and **console.table**.  
 The included package.json means you can type `npm install` from the command line to install the dependancies.
 ## Usage
+[Tutorial Video](https://youtu.be/Ft949y0StZs)  
 `node app` will run the program.  
 Then use the arrow keys to select an option, and enter to perform that action.
 ## License
